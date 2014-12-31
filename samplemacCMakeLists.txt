@@ -1,0 +1,29 @@
+#要求するcmakeのバージョン
+cmake_minimum_required(VERSION 2.8)
+
+#project name
+PROJECT(mpi_fdtd2D)
+
+set(CMAKE_C_FLAGS "-Wall -std=c99")
+set(CMAKE_C_FLAGS_DEBUG "-g -DUSE_OPENGL -DMAC_OS")
+set(CMAKE_C_FLAGS_RELEASE "-g -DUSE_OPENGL -DMAC_OS")
+set(CMAKE_BUILD_TYPE release)
+
+find_package(MPI)
+include_directories(${MPI_C_INCLUDE_PATH})
+link_directories(${MPI_LIBRARY_PATH})
+
+find_package(OPENGL)
+find_package(GLUT)
+include_directories(${GLUT_INCLUDE_DIR})
+link_directories(${GLUT_LIBRARY_DIR})
+
+find_package(GLEW)
+include_directories(${GLEW_INCLUDE_PATH})
+link_directories(${GLEW_LIBRARY_DIR})
+
+file(GLOB srcFile ${CMAKE_CURRENT_SOURCE_DIR}/*.c)
+add_executable(mpi_fdtd2D ${srcFile})
+
+target_link_libraries(mpi_fdtd2D ${MPI_LIBRARIES})
+target_link_libraries(mpi_fdtd2D ${OPENGL_LIBRARY} ${GLUT_LIBRARY} ${GLEW_LIBRARY} m)
