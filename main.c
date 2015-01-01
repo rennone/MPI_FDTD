@@ -86,6 +86,10 @@ static void calcFieldSize(FieldInfo *fInfo)
     else
       fInfo->width_nm = fInfo->height_nm;
   }
+
+  int N = 16; // mpiで分割できるようにNの倍数になるようにする
+  fInfo->width_nm  = floor( ((int)(fInfo->width_nm / fInfo->h_u_nm)+N-1) / N) * N * fInfo->h_u_nm;
+  fInfo->height_nm = floor( ((int)(fInfo->height_nm / fInfo->h_u_nm)+N-1) / N) * N * fInfo->h_u_nm;
 }
 
 static void initParameter()
