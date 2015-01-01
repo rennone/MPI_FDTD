@@ -165,23 +165,13 @@ int main( int argc, char *argv[] )
   models_setModel(MIE_CYLINDER);       // MORPHO_SCALE,TRACE_IMAGE, ZIGZAG,NO_MODEL,
   simulator_setSolver(MPI_TM_UPML); 
 
-
-//  initConfigFromText();
   initParameter();  //パラメータを設定
   moveDir();
 
-  /*
- //プロセスごとに別のシミュレーションをする.
-  bool changeModel;
-  if( nextSimulation(rank, &changeModel) == true){
-    MPI_Finalize();
-    exit(0);
-  }
-  */
-  
   //シミュレーションの初期化.
   simulator_init(config.field_info);
-  screenshot();
+  //TODO 画像は保存したほうがいいので,ルートプロセスに集めてから保存するべき
+//  screenshot();
   
   //exitしたプロセスがあると停止してしまうのでMPI_Finalizeは使えない
 //  MPI_Barrier(MPI_COMM_WORLD); //(情報表示がずれないように)全員一緒に始める
@@ -211,8 +201,7 @@ int main( int argc, char *argv[] )
       moveDir(); //ディレクトリの移動
       simulator_init(config.field_info);
      
-      screenshot();
-  
+//      screenshot();  
     } else {
       simulator_reset(); //変化してなければ,データの書き出しと電磁波の値だけ0に戻す.
       field_setWaveAngle(config.field_info.angle_deg); //角度だけ変える.
