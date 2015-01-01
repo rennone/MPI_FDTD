@@ -9,6 +9,7 @@
 #include "models.h"
 #include "function.h"
 #include "mpiNtffTM.h"
+#include "ntff.h"
 
 /* about NTFF */
 static double complex *Ux = NULL;
@@ -109,6 +110,7 @@ static void init(void)
 {
   field_initMPI();
   init_mpi();
+  mpiNtffTM_init();
   allocateMemories();
   setCoefficient();
 //  initDebug();
@@ -124,7 +126,6 @@ static void update(void)
 //  MPI_Barrier(MPI_COMM_WORLD); //いらない?
   scatteredWave(Ez, EPS_EZ);
   //planeWave(Ez, EPS_EZ);
-
   
   //Connection_SendRecvE();
   Connection_ISend_IRecvE();
@@ -136,14 +137,90 @@ static void update(void)
   //Connection_SendRecvH();
 
 //  ntff();
+  mpiNtffTM_TimeCalc(Hx, Hy, Ez, Ux, Uy, Wz);
+}
+
+static void ntffTime()
+{
+  SubFieldInfo_S subInfo_s = field_getSubFieldInfo_S();
+  NTFFInfo nInfo = field_getNTFFInfo();
+
+  //Eth, Ephを計算
+  dcomplex *Eth = newDComplex(360 * nInfo.arraySize);
+  dcomplex *Eph = newDComplex(360 * nInfo.arraySize);
+  mpiNtffTM_TimeTranslate(Ux,Uy,Wz,Eth,Eph);
+  
+  int stLambda = LAMBDA_ST_NM, enLamba = LAMBDA_EN_NM;
+  
+  int dataSize = 360*(enLamba-stLambda+1);  
+  dcomplex *datas = newDComplex(dataSize);
+
+  //二次元配列的にアクセスしたいのでそれ用
+  dcomplex **norm = (dcomplex**)malloc(sizeof(complex*) * (LAMBDA_EN_NM-LAMBDA_ST_NM+1));  
+  for(int l=0; l<=LAMBDA_EN_NM-LAMBDA_ST_NM; l++)
+    norm[l] = &datas[360*l];
+
+  //fft用に2の累乗の配列を確保    
+  dcomplex *eth = newDComplex(NTFF_NUM);
+  for(int ang=0; ang<360; ang++)
+  {
+    int k= ang*nInfo.arraySize;
+    const int maxTime = field_getMaxTime();
+    memset((void*)eth, 0, sizeof(dcomplex)*NTFF_NUM);//0で初期化
+    memcpy((void*)eth, (void*)&Eth[k], sizeof(dcomplex)*maxTime); //コピー
+    cfft(eth, NTFF_NUM); //FFT
+    
+    FieldInfo fInfo = field_getFieldInfo();
+    for(int lambda_nm=stLambda; lambda_nm<=enLamba; lambda_nm++)
+    {
+      //線形補完 TODO : index = n-1 となるほどの小さいlambdaを取得しようとするとエラー
+      double p = C_0_S * fInfo.h_u_nm * NTFF_NUM / lambda_nm;
+      int index = floor(p);
+      p = p-index;
+
+      norm[lambda_nm-stLambda][ang] = ( (1-p)*eth[index] + p*eth[index+1] );
+    }
+  }
+  
+  freeDComplex(eth);
+  freeDComplex(Eth);
+  freeDComplex(Eph);
+  
+  if(subInfo_s.Rank==0){
+    int nproc;
+    MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+    
+    dcomplex *res = newDComplex(dataSize);
+    for(int i=1; i<nproc; i++){
+      MPI_Status status;
+      MPI_Recv(res, dataSize, MPI_C_DOUBLE_COMPLEX, i, 1, MPI_COMM_WORLD, &status);
+        
+      for(int l=0; l<dataSize; l++)
+        datas[l] += res[l];
+    }
+    freeDComplex(res);
+    
+    for(int ang = 0; ang<360; ang++){
+      printf("%lf\n", cnorm( norm[500-stLambda][ang] )/NTFF_NUM );
+    }
+    
+  }else
+  {
+    MPI_Send(datas, dataSize, MPI_C_DOUBLE_COMPLEX, 0, 1, MPI_COMM_WORLD);
+  }
+
+  freeDComplex(datas);
+  freeDComplex(norm);
 }
 
 static void reset()
-{
+{  
   //最後は同期をとっておく
   MPI_Barrier(MPI_COMM_WORLD);
 
-  SubFieldInfo_S subInfo_s = field_getSubFieldInfo_S();  
+  ntffTime();
+
+  SubFieldInfo_S subInfo_s = field_getSubFieldInfo_S();
   memset(Hx, 0, sizeof(double complex)*subInfo_s.SUB_N_CELL);
   memset(Hy, 0, sizeof(double complex)*subInfo_s.SUB_N_CELL);
   memset(Ez, 0, sizeof(double complex)*subInfo_s.SUB_N_CELL);
@@ -152,7 +229,12 @@ static void reset()
   memset(Jz, 0, sizeof(double complex)*subInfo_s.SUB_N_CELL);
   memset(Bx, 0, sizeof(double complex)*subInfo_s.SUB_N_CELL);
   memset(By, 0, sizeof(double complex)*subInfo_s.SUB_N_CELL);
-  memset(Dz, 0, sizeof(double complex)*subInfo_s.SUB_N_CELL);  
+  memset(Dz, 0, sizeof(double complex)*subInfo_s.SUB_N_CELL);
+
+  NTFFInfo nInfo = field_getNTFFInfo();
+  memset(Ux, 0, sizeof(dcomplex)*360*nInfo.arraySize);
+  memset(Uy, 0, sizeof(dcomplex)*360*nInfo.arraySize);
+  memset(Wz, 0, sizeof(dcomplex)*360*nInfo.arraySize);
 }
 
 //Finish
@@ -160,17 +242,19 @@ static void finish(void)
 {
   //最後は同期をとっておく
   MPI_Barrier(MPI_COMM_WORLD);
-  
+
+  reset();
 //  ntffOutput();
 //  output();
 
-  dcomplex *res = (dcomplex*)malloc(sizeof(dcomplex)*360);
+//  dcomplex *res = (dcomplex*)malloc(sizeof(dcomplex)*360);
 //  ntffTM_FrequencySplit(Hx, Hy, Ez, res);
-  free(res);
+//  free(res);
   
   freeMemories();
   
   MPI_Finalize();
+  exit(0);
 }
 
 static inline void Connection_ISend_IRecvH(void)
@@ -279,22 +363,25 @@ static inline void scatteredWave(double complex *p, double *eps)
     for(int j=1; j<subInfo_s.SUB_N_PY-1; j++)
     {
       int k = field_subIndex(i,j);
+
+      if( eps[k] == EPSILON_0_S )
+        continue;
+      
       int x = i-1+subInfo_s.OFFSET_X;
       int y = j-1+subInfo_s.OFFSET_Y;
-
-      /*
+      
       //ガウシアンパルス
-      const double t0 = 100;      //t0 stepでmaxになるように時間移動
+      const double t0 = 500;      //t0 stepでmaxになるように時間移動
       const double beam_width = 50;
       const double r = (x*_cos+y*_sin)/C_0_S-(time-t0);
       const double gaussian_coef = exp( -pow(r/beam_width, 2 ) );
       p[k] += gaussian_coef*(EPSILON_0_S/eps[k] - 1)*cexp(I*r*w_s);
-      */
       
+      /*
       //単一波長の散乱波
       double kr = x*ks_cos+y*ks_sin;
       p[k] += ray_coef*(EPSILON_0_S/eps[k] - 1.0)*cexp( I*(kr-w_s*time) );
-      
+      */
     }
   }
 }

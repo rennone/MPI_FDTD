@@ -148,7 +148,7 @@ dcomplex field_pointLight()
   return ray_coef*cexp(I*w_s*time);
 }
 
-//PML用の散乱波
+//散乱波
 void field_nsScatteredWaveNotUPML(dcomplex *p, double *eps, double gapX, double gapY, double dot)
 {
   FieldInfo_S fInfo_s = field_getFieldInfo_S();
@@ -227,7 +227,7 @@ void field_scatteredPulse(dcomplex *p, double *eps, double gapX, double gapY, do
   double cos_per_c = cos(rad)/C_0_S, sin_per_c = sin(rad)/C_0_S;
   const double beam_width = 50; //パルスの幅
 
-  FieldInfo_S fInfo_s = field_getFieldInfo_S();
+  FieldInfo_S fInfo_s      = field_getFieldInfo_S();  
   
   //waveAngleにより, t0の値を変えないとちょうどいいところにピークが来ないため,それを計算.
   const double center_peak = (fInfo_s.N_PX/2.0+gapX)*cos_per_c+(fInfo_s.N_PY/2+gapY)*sin_per_c; //スタートから中心へ進むのにかかる時間
@@ -240,7 +240,7 @@ void field_scatteredPulse(dcomplex *p, double *eps, double gapX, double gapY, do
   for(int i=1; i<fInfo_s.N_PX-1; i++)
   {
     for(int j=1; j<fInfo_s.N_PY-1; j++)
-    {      
+    {
       int k = field_index(i,j);
       if(EPSILON_0_S == eps[k])
         continue;

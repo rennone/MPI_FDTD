@@ -92,7 +92,7 @@ void mpiNtffTM_TimeTranslate(dcomplex *Ux, dcomplex *Uy, dcomplex *Wz, dcomplex 
       double complex EPH = coef*(-Z_0_S*WPH+UTH);
       
       Eth[k+i] = ETH; //TODO : 物理単位に変換が必要かも
-      Eph[k+i] = EPH;
+      Eph[k+i] = EPH; //Note : TMモードでは必要無い
     }
   }
 }
@@ -116,8 +116,9 @@ double** mpiNtffTM_TimeCalcNorm(dcomplex *Ux, dcomplex *Uy, dcomplex *Wz, int *s
   
   double **out_ref = (double**)malloc(sizeof(double*) * (LAMBDA_EN_NM-LAMBDA_ST_NM+1));
 
+  double *datas = newDouble(360*(LAMBDA_EN_NM-LAMBDA_ST_NM+1));
   for(int l=0; l<=LAMBDA_EN_NM-LAMBDA_ST_NM; l++)
-    out_ref[l] = newDouble(360);
+    out_ref[l] = &datas[360*l];
 
   //fft用に2の累乗の配列を確保
   dcomplex *eth = newDComplex(NTFF_NUM);
@@ -138,7 +139,7 @@ double** mpiNtffTM_TimeCalcNorm(dcomplex *Ux, dcomplex *Uy, dcomplex *Wz, int *s
       p = p-index;
       out_ref[lambda_nm-LAMBDA_ST_NM][ang] = ((1-p)*cnorm(eth[index]) + p*cnorm(eth[index+1]))/NTFF_NUM;
     }
-  }  
+  }
   freeDComplex(eth);
 
   free(Eth);
@@ -164,17 +165,17 @@ void mpiNtffTM_TimeCalc(dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex *Ux, 
   SubFieldInfo_S subInfo_s = field_getSubFieldInfo_S();
   NTFFInfo nInfo = field_getNTFFInfo();
   
-  const double coef = 1.0/(4*M_PI*C_0_S*R0);
+//  const double coef = 1.0/(4*M_PI*C_0_S*R0);
 
   //分割領域系に置ける, 中心の位置
   double cx = fInfo_s.N_PX/2 - subInfo_s.OFFSET_X;
   double cy = fInfo_s.N_PY/2 - subInfo_s.OFFSET_Y;
 
   //分割領域のインデックスに変換 (0以下, SUB_N_PX, PY以上だと範囲外)
-  int tp =    nInfo.top - subInfo_s.OFFSET_Y; //上面
-  int bm = nInfo.bottom - subInfo_s.OFFSET_Y; //下面
-  int rt = nInfo.right  - subInfo_s.OFFSET_X; //右
-  int lt = nInfo.left   - subInfo_s.OFFSET_X; //左
+  int tp = sub_tp; //上面
+  int bm = sub_bm; //下面
+  int rt = sub_rt; //右
+  int lt = sub_lt; //左
 
   double timeE = field_getTime() - 1;   //t - Δt
   double timeH = field_getTime() - 0.5; //t - Δt/2
@@ -192,11 +193,11 @@ void mpiNtffTM_TimeCalc(dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex *Ux, 
     dcomplex *Wz_ang = &Wz[index_ang];
 
     //bottom normal(0,-1,0) //W = Js = n × H = ( 0, 0, Hx)  U = Ms = E × n = (Ez, 0,  0)
-    if ( 0 < bm && bm < subInfo_s.SUB_N_PY-1 ) {
+    if ( IN_BM ) {
       //積分路の端で無ければ, 分割領域の端から端までが積分路である
       // 一番外側はのりしろなので 1~SUB_N_PX-2まで, ただし lt <= x < rt なので 1~SUB_N_PY-1になってる
-      const int subLeft  = max(1, lt);
-      const int subRight = min(subInfo_s.SUB_N_PX-1, rt);
+      const int subLeft  = sub_ylt;
+      const int subRight = sub_yrt;
       
       for(int i=subLeft; i<subRight; i++)
       {
@@ -212,9 +213,9 @@ void mpiNtffTM_TimeCalc(dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex *Ux, 
     }
     
     //right normal(1,0,0)    //Js = n × H = (0, 0,Hy)  Ms = E × n = ( 0,Ez,0)
-    if ( 0 < rt && rt < subInfo_s.SUB_N_PX-1) {
-      int subTop    = min(subInfo_s.SUB_N_PY, tp);
-      int subBottom = max(1, bm);
+    if ( IN_RT ) {
+      int subTop    = sub_xtp;
+      int subBottom = sub_xbm;
       for ( int j=subBottom; j<subTop; j++ ) {
         const double r2x = rt-cx;
         const double r2y =  j-cy;
@@ -227,9 +228,9 @@ void mpiNtffTM_TimeCalc(dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex *Ux, 
     }
 
     //top normal(0,1,0)  //Js = n × H = (0, 0,-Hx)  Ms = E × n = (-Ez, 0,  0)
-    if ( 0 < tp && tp < subInfo_s.SUB_N_PY-1) {      
-      int subLeft  = max(1, lt);
-      int subRight = min(subInfo_s.SUB_N_PX, rt);
+    if ( IN_TP ) {
+      int subLeft  = sub_ylt;
+      int subRight = sub_yrt;
       for ( int i=subLeft; i<subRight; i++ ) {
         const double r2x  =  i-cx;
         const double r2y  = tp-cy;
@@ -242,9 +243,9 @@ void mpiNtffTM_TimeCalc(dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex *Ux, 
     }
 
     // (left,top) -> (left,bottom)  normal(-1,0,0)   //Js = n × H = (0,0,-Hy)    Ms = E × n = (0,-Ez,0)
-    if ( 0 < lt && lt < subInfo_s.SUB_N_PX-1 ) {
-      int subTop    = min(subInfo_s.SUB_N_PY, tp);
-      int subBottom = max(1, bm);
+    if ( IN_LT ) {
+      int subTop    = sub_xtp;
+      int subBottom = sub_xbm;
       for ( int j=subBottom; j<subTop; j++ ) {
         const double r2x = lt-cx;
         const double r2y =  j-cy;
@@ -291,7 +292,7 @@ void mpiNtffTM_Frequency( dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex res
     // (left,bottom) -> (right,bottom)
     // 法線ベクトルはn=(0, -1)
     //積分路が分割領域内にあるか確認 
-    if (  0 < bm && bm < subInfo_s.SUB_N_PY-1)
+    if ( IN_BM )
     {
       int subLeft  = max(1, lt);                    //左右の端で無ければ, 分割領域の端から端までが積分路である
       int subRight = min(subInfo_s.SUB_N_PX-1, rt); //領域の端っこでなれば, 全部が積分路なのでSUB_N_PX-1 でなく SUB_N_PX まで
@@ -310,7 +311,7 @@ void mpiNtffTM_Frequency( dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex res
     }
 
     // (right,bottom) -> (right,top) n=(1,0)
-    if ( 0 < rt && rt < subInfo_s.SUB_N_PX-1)
+    if ( IN_RT )
     {
       int subTop    = min(subInfo_s.SUB_N_PY-1, tp);
       int subBottom = max(1, bm);
@@ -331,7 +332,7 @@ void mpiNtffTM_Frequency( dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex res
 
 
     // (right,top) -> (left,top)  n=(0,1)
-    if ( 0 < tp && tp < subInfo_s.SUB_N_PY-1)
+    if ( IN_TP )
     {      
       //左右の端で無ければ, 分割領域の端から端までが積分路である
       int subLeft  = max(1, lt);
@@ -352,7 +353,7 @@ void mpiNtffTM_Frequency( dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex res
     }
 
     // (left,top) -> (left,bottom)
-    if ( 0 < lt && lt < subInfo_s.SUB_N_PX-1 )
+    if ( IN_LT )
     {
       int subTop    = min(subInfo_s.SUB_N_PY-1, tp);
       int subBottom = max(1, bm); 

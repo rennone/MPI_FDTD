@@ -9,9 +9,6 @@ extern void mpiNtffTM_init();
 //resEzに周波数領域の遠方解を代入する.
 extern void mpiNtffTM_Frequency( dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex resEz[360]);
 
-//resEzに周波数領域の遠方解を代入する(領域分割タイプ).
-extern void mpiNtffTM_Frequency( dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex resEz[360]);
-
 //時間領域の遠方解のupdate処理(Ux,Uy,Wzを更新)
 extern void mpiNtffTM_TimeCalc(dcomplex *Hx, dcomplex *Hy, dcomplex *Ez, dcomplex *Ux, dcomplex *Uy, dcomplex *Wz);
 
