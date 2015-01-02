@@ -19,8 +19,8 @@ typedef struct Config
   enum SOLVER SolverType;
 }Config;
 
-#define ST_PHI 0
-#define EN_PHI 0
+#define ST_PHI -90
+#define EN_PHI -90
 
 #define DELTA_PHI 5
 
@@ -108,7 +108,7 @@ static void initParameter()
   
   calcFieldSize(&config.field_info);
 
-  printf("field size(%d nm, %d nm)\n", config.field_info.width_nm, config.field_info.height_nm);
+//  printf("field size(%d nm, %d nm)\n", config.field_info.width_nm, config.field_info.height_nm);
 }
 
 //次のシミュレーションパラメータを探す
@@ -129,14 +129,14 @@ bool nextSimulation(int progress, bool *changeModel)
     {
       config.field_info.angle_deg = config.startAngle;
       (*changeModel) = true;
+      
       if(models_isFinish()) {
         return true;
       }
-
+      
 #ifdef USE_OPENGL
       drawer_clear(); //画像をクリア
-#endif
-      
+#endif      
     }
   }
   return false;
@@ -144,12 +144,15 @@ bool nextSimulation(int progress, bool *changeModel)
 
 static void screenshot()
 {
+  //TODO
+  return ;
+  
   //その構造で,角度がST_PHIのやつだけが画像を保存する.
-  if(config.field_info.angle_deg == ST_PHI)
-  {
-    FieldInfo_S fInfo_s = field_getFieldInfo_S();
-    drawer_outputImage("image.bmp", simulator_getDrawingData(), simulator_getEps(), fInfo_s.N_PX, fInfo_s.N_PY);
-  }
+  if(config.field_info.angle_deg != ST_PHI)
+    return;
+  
+  FieldInfo_S fInfo_s = field_getFieldInfo_S();
+  drawer_outputImage("image.bmp", simulator_getDrawingData(), simulator_getEps(), fInfo_s.N_PX, fInfo_s.N_PY);
 }
 
 int main( int argc, char *argv[] )
@@ -162,7 +165,7 @@ int main( int argc, char *argv[] )
 
   colorTransform_init();
 
-  models_setModel(MIE_CYLINDER);       // MORPHO_SCALE,TRACE_IMAGE, ZIGZAG,NO_MODEL,
+  models_setModel(LAYER);       // MORPHO_SCALE,TRACE_IMAGE, ZIGZAG,NO_MODEL,
   simulator_setSolver(MPI_TM_UPML); 
 
   initParameter();  //パラメータを設定
@@ -170,12 +173,8 @@ int main( int argc, char *argv[] )
 
   //シミュレーションの初期化.
   simulator_init(config.field_info);
-  //TODO 画像は保存したほうがいいので,ルートプロセスに集めてから保存するべき
-//  screenshot();
   
-  //exitしたプロセスがあると停止してしまうのでMPI_Finalizeは使えない
-//  MPI_Barrier(MPI_COMM_WORLD); //(情報表示がずれないように)全員一緒に始める
-  printf("rank=%d, angle=%d\n",rank, config.field_info.angle_deg);
+  screenshot();  
   
 #ifndef USE_OPENGL
   //only calculate mode
@@ -186,22 +185,24 @@ int main( int argc, char *argv[] )
       simulator_calc();    
     }
 
-    //numProc次のシミュレーションにする. 角度が変わるか構造(nm変数のみ)が変わるか
-    if( nextSimulation(numProc, &changeModel) == true)
-    {
-      simulator_finish(); //シミュレーションの終わり
+    // TODO
+    // 入射角は真上から限定なので毎回finishを呼び出す.
+    // nextSimulationの前にmodels_evaluateを呼び出す必要があるため.前に書いている.
+    simulator_finish();     //変化したら, メモリを解放させる為にシミュレーションを終了させる
+    
+    bool changeModel;
+    //次のシミュレーションにする. 角度が変わるか構造(nm変数のみ)が変わるか
+    if( nextSimulation(1, &changeModel) == true){
       break;
     }
 
     //モデルが変化したかどうか
-    if(changeModel)
-    {
-      simulator_finish();     //変化したら, メモリを解放させる為にシミュレーションを終了させる
+    if(changeModel){
       calcFieldSize(&config.field_info);        //フィールドサイズの再計算
       moveDir(); //ディレクトリの移動
       simulator_init(config.field_info);
      
-//      screenshot();  
+      screenshot();  
     } else {
       simulator_reset(); //変化してなければ,データの書き出しと電磁波の値だけ0に戻す.
       field_setWaveAngle(config.field_info.angle_deg); //角度だけ変える.
@@ -275,43 +276,38 @@ static void display()
 static void idle(void)
 {
   simulator_calc();
-
-  //Note:
-  //GAでルートプロセスが,他のプロセスの終了を確認するために入れている.
-  models_update(); //モデルのアップデート処理
   
   //シミュレーションが続くなら再描画して終わり
   if( !simulator_isFinish() ){
     glutPostRedisplay();  //再描画
     return;
   }
-  
-  bool changeModel;
 
+  // TODO
+  // 入射角は真上から限定なので毎回finishを呼び出す.
+  // nextSimulationの前にmodels_evaluateを呼び出す必要があるため.前に書いている.
+  simulator_finish();
+  
+  bool changeModel;  
   //シミュレーションを進める.
-  if( nextSimulation(numProc, &changeModel) == true )
-  {
-    simulator_finish();
+  if( nextSimulation(1, &changeModel) == true ){  
     MPI_Finalize();
     exit(0);
   }
 
   if( changeModel ){
-    simulator_finish(); //シミュレーションを終える.
-    
     //モデルを変更して再計算する
-    calcFieldSize(&config.field_info);   
+    calcFieldSize(&config.field_info);
     moveDir();
     //シミュレーションの初期化.
     simulator_init(config.field_info);
-
     screenshot();
   } else {
     simulator_reset();
     field_setWaveAngle(config.field_info.angle_deg);
   }
-
 }
+
 // 以上 OPENGLの関数
 
 /*

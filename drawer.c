@@ -267,13 +267,13 @@ void drawer_saveImage(char *fileName, colorf **cells, int width, int height)
   FILE *fp = fopen(fileName, "wb");
   if(fp==NULL)
   {
-    printf("can not open file %s",fileName);
+    printf("can not open file %s\n",fileName);
     free(buf);
     return;
   }
 
   if( !putBmpHeader(fp, data_width, height, bpp) ) {
-    printf("can not write headers");
+    printf("can not write headers\n");
     fclose(fp);
     free(buf);
     return;
@@ -281,7 +281,7 @@ void drawer_saveImage(char *fileName, colorf **cells, int width, int height)
 
   if( fwrite((unsigned char*)buf, sizeof(unsigned char), datasize, fp) != datasize)
   {
-    printf("can not write data");
+    printf("can not write data\n");
     fclose(fp);
     free(buf);
     return;

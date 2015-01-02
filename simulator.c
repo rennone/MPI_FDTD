@@ -37,7 +37,7 @@ static void setMPITMupml(){
   getDataZ = mpi_fdtdTM_upml_getEz;
   
   getDrawData = getDataZ;
-  printf("MPI TM UPML mode \n");
+//  printf("MPI TM UPML mode \n");
 
   solverDir = "MPI_TM_UPML";
 }
@@ -56,7 +56,7 @@ static void setMPITEupml(){
 
   getDrawData = getDataY;
   
-  printf("MPI TE UPML mode \n");
+//  printf("MPI TE UPML mode \n");
 
   solverDir = "MPI_TE_UPML";
 }

@@ -199,13 +199,26 @@ static void ntffTime()
         datas[l] += res[l];
     }
     freeDComplex(res);
+
+    double *refData = newDouble(dataSize);
+    double **reflec = (double*)malloc(sizeof(double*)*(enLamba-stLambda+1));
+    for(int l=0; l<enLamba-stLambda+1; l++)
+      reflec[l] = &refData[360*l];
+
+    for(int l=0; l<enLamba-stLambda+1; l++)
+      for(int ang=0; ang<360; ang++)
+        reflec[l][ang] = cnorm( norm[l][ang] ) / (1.0*NTFF_NUM);
+
+    //反射角で正規化する => 反射率を計算
+    for(int i=0; i<=enLamba-stLambda; i++)
+      ntff_normalize(reflec[i]);
+
+    models_evaluate(reflec, stLambda, enLamba);
     
-    for(int ang = 0; ang<360; ang++){
-      printf("%lf\n", cnorm( norm[500-stLambda][ang] )/NTFF_NUM );
-    }
-    
-  }else
-  {
+    free(refData);
+    free(reflec);
+  }
+  else{
     MPI_Send(datas, dataSize, MPI_C_DOUBLE_COMPLEX, 0, 1, MPI_COMM_WORLD);
   }
 
@@ -244,17 +257,14 @@ static void finish(void)
   MPI_Barrier(MPI_COMM_WORLD);
 
   reset();
-//  ntffOutput();
-//  output();
-
 //  dcomplex *res = (dcomplex*)malloc(sizeof(dcomplex)*360);
 //  ntffTM_FrequencySplit(Hx, Hy, Ez, res);
 //  free(res);
   
   freeMemories();
   
-  MPI_Finalize();
-  exit(0);
+//  MPI_Finalize();
+//  exit(0);
 }
 
 static inline void Connection_ISend_IRecvH(void)
@@ -356,7 +366,12 @@ static inline void scatteredWave(double complex *p, double *eps)
 //毎回計算すると時間かかりそうだから代入しておく  
   double _cos = cos(rad), _sin = sin(rad);
   double ks_cos = _cos*k_s, ks_sin = _sin*k_s;
-  
+
+
+  //ガウシアンパルス
+  FieldInfo_S fInfo_s = field_getFieldInfo_S();
+  const double center_peak = (fInfo_s.N_PX/2.0)*_cos / C_0_S +(fInfo_s.N_PY/2)*_sin / C_0_S; //スタートから中心へ進むのにかかる時間
+
   SubFieldInfo_S subInfo_s = field_getSubFieldInfo_S();
   for(int i=1; i<subInfo_s.SUB_N_PX-1; i++)
   {
@@ -369,9 +384,8 @@ static inline void scatteredWave(double complex *p, double *eps)
       
       int x = i-1+subInfo_s.OFFSET_X;
       int y = j-1+subInfo_s.OFFSET_Y;
-      
-      //ガウシアンパルス
-      const double t0 = 500;      //t0 stepでmaxになるように時間移動
+
+      const double t0 = -center_peak + 500;      //t0 stepでmaxになるように時間移動
       const double beam_width = 50;
       const double r = (x*_cos+y*_sin)/C_0_S-(time-t0);
       const double gaussian_coef = exp( -pow(r/beam_width, 2 ) );
