@@ -702,7 +702,7 @@ static void GAInitialize(){
   Ranges[eTHICK_NM_1].Max   = 550;
   Ranges[eTHICK_NM_1].Range = 10;
 
-  Ranges[eLAYER_NUM].Min   = 1;
+  Ranges[eLAYER_NUM].Min   = 3;
   Ranges[eLAYER_NUM].Max   = 10;
   Ranges[eLAYER_NUM].Range = 1;
 
