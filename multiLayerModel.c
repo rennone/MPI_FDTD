@@ -4,6 +4,9 @@
 #include <math.h>
 #include "evaluate.h"
 #include <mpi.h>
+#include <unistd.h>
+#include <sys/param.h>
+#include "colorTransform.h"
 //屈折率
 #define N_0 1.0
 #define N_1 1.56
@@ -499,6 +502,7 @@ static void printIndiv(Individual *p)
   printf("\n");
 }
 
+#ifdef DEBUG
 static void BuildTypeTest()
 {
   //テスト
@@ -515,13 +519,14 @@ static void BuildTypeTest()
       MPI_Status status;
       Individual s;
       MPI_Recv(&s, 1, MPI_INDIVIDUAL, i, 0, MPI_COMM_WORLD, &status);
-      printIdniv(&s);
+      printIndiv(&s);
     }
   }
   else{
     MPI_Send(&p, 1, MPI_INDIVIDUAL, 0, 0, MPI_COMM_WORLD);
   }
 }
+#endif
 
 //突然変異
 static Individual Mutation(){  
@@ -560,7 +565,7 @@ static void CrossOver(Individual *p1, Individual *p2)
 {
   int p2Cross       = 50; //二点交叉の確率
   int pUniformCorss = 50; //一様交叉の確率
-  int p = rand()%100;
+  int p = rand()%(p2Cross + pUniformCorss);
   
   //2点交叉
   if(p < p2Cross){
@@ -628,7 +633,7 @@ static void Heterogenesis()
   int mutationP = 5; //突然変異確率
   for(int i=0; i<NUM_GENOTYPE;)
   {
-    int p = rand()%100;
+    int p = rand()%(selectP + crossP + mutationP);
     if( p < selectP)
     {
       nexGeneration[i++] = Select();
@@ -658,38 +663,8 @@ static void Heterogenesis()
   indivNoCur = 0;
 }
 
-//初期の設定はランクによりランダムに決定する.
-static Individual InitialGeneration(int rank)
-{
-  double evals[EVAL_NUM] = {-1000};
-  Individual p = SettingToInidividual(evals);
-  return p;
-}
-
-static MPI_Request *requests, *flgRequests;
-static bool *finishedFlags;
 #include <time.h>
-
 #include "drawer.h"
-static void printTest()
-{
-  colorf **img;
-  img = (colorf**)malloc(sizeof(colorf*)*180);
-  for(int i=0; i<180; i++)
-    img[i] = (colorf*)malloc(sizeof(colorf)*64);
-  
-  for(int i=0; i<180; i++){
-    for(int j=0; j<64; j++){
-      double r=0,g=0,b=0;
-      colorTransform_trans(i+380, 2.0, &r, &g, &b);
-      img[i][j].r = r;
-      img[i][j].g = g;
-      img[i][j].b = b;
-    }
-  }
-  //色の画像を保存
-  drawer_saveImage("test.bmp", img, 180, 64); 
-}
 
 static void GAInitialize(){  
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
