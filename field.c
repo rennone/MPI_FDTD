@@ -388,25 +388,31 @@ void field_outputAllDataDouble(const char *fileName, double *data)
 //MPIにより領域を分割する.
 void field_initMPI()
 {
-  int num_proc;
-  int dim       = 2;        //number of dimension is 2
-  int procs[2]  = {0,0};    //[0]: x方向の分割数, [1]:y方向の分割数
-  int period[2] = {0,0};    //境界条件, 固定境界(1=>周期境界)
-  int reorder   = 1;   //re-distribute rank flag
-  MPI_Comm grid_comm;
+  static int num_proc;
+  static int dim       = 2;      //number of dimension is 2
+  static int procs[2]  = {0,0};  //[0]: x方向の分割数, [1]:y方向の分割数
+  static int period[2] = {0,0};  //境界条件, 固定境界(1=>周期境界)
+  static int reorder   = 1;      //re-distribute rank flag
+  static MPI_Comm grid_comm;     //コミュニケータ
+  static int coordinates[2];     //プロセス座標において自分がどの位置に居るのか求める(何行何列に居るか)
 
-  MPI_Comm_size(MPI_COMM_WORLD, &num_proc);
-  MPI_Dims_create(num_proc, dim, procs);
-  MPI_Cart_create(MPI_COMM_WORLD, 2, procs, period, reorder, &grid_comm);
-  //周りの領域のプロセスランクを取得
-  MPI_Cart_shift(grid_comm, 0, 1, &subFieldInfo_s.LtRank, &subFieldInfo_s.RtRank);
-  MPI_Cart_shift(grid_comm, 1, 1, &subFieldInfo_s.BmRank, &subFieldInfo_s.TpRank);
+  // 何度もコミュニケータを作成するとスタックがオーバフローするので,
+  // わけるのは最初だけでいい.
+  static bool initialCall = true;
+  if( initialCall ){
+    MPI_Comm_size(MPI_COMM_WORLD, &num_proc);
+    MPI_Dims_create(num_proc, dim, procs);
+    MPI_Cart_create(MPI_COMM_WORLD, 2, procs, period, reorder, &grid_comm);
+    //周りの領域のプロセスランクを取得
+    MPI_Cart_shift(grid_comm, 0, 1, &subFieldInfo_s.LtRank, &subFieldInfo_s.RtRank);
+    MPI_Cart_shift(grid_comm, 1, 1, &subFieldInfo_s.BmRank, &subFieldInfo_s.TpRank);
 
-  //プロセス座標において自分がどの位置に居るのか求める(何行何列に居るか)
-  int coordinates[2];
-  MPI_Comm_rank(grid_comm, &subFieldInfo_s.Rank);
-  MPI_Cart_coords(grid_comm, subFieldInfo_s.Rank, 2, coordinates);
+    MPI_Comm_rank(grid_comm, &subFieldInfo_s.Rank);
+    MPI_Cart_coords(grid_comm, subFieldInfo_s.Rank, 2, coordinates);
 
+    initialCall = false;
+  }
+  
   //小領域がすべて同じ大きさになるかチェック
   if( fieldInfo_s.N_PX%procs[0] !=0 || fieldInfo_s.N_PY%procs[1] != 0){      
     printf("cannot devide size(%d, %d) by proc(%d,%d) \n",
