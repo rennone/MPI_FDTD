@@ -456,11 +456,48 @@ void IndividualToSetting(Individual *p)
 }
 
 
-#define NUM_GENOTYPE 25  //世代の個体数
+#define NUM_GENOTYPE 2  //世代の個体数
 static Individual *curGeneration = NULL; //現世代
 static Individual *nexGeneration = NULL; //次世代
 static int indivNoCur = 0; //現世代で実行済みの個体数
-static int numOfMemo = 0;  
+static int numOfMemo = 0;
+
+
+#define NUM_OF_STORAGE 10000
+typedef struct Storage{
+  Individual *storage;
+  int size;
+  int nextIndex;
+} Storage;
+static Storage storage;
+
+void InitializeStorage(){  
+  storage.storage = (Individual*)malloc(sizeof(Individual)*NUM_OF_STORAGE);
+  storage.size = 0;
+  storage.nextIndex = 0;
+}
+
+bool ExistInStorageAndSetEval(Individual *p){
+  for(int i=0; i <storage.size; i++)
+    if( Equal( &storage.storage[i], p) ){
+      for(int i=0; i<EVAL_NUM; i++)
+        p->evals[i] = storage.storage[i].evals[i];
+
+      return true;
+    }
+  
+  return false;
+}
+
+void AddStorage(Individual p){  
+  if( ExistInStorageAndSetEval(&p) ){
+    return;
+  }
+  storage.storage[storage.nextIndex] = p;
+  storage.nextIndex = (storage.nextIndex + 1) % NUM_OF_STORAGE;
+  storage.size = min(NUM_OF_STORAGE, storage.size+1);
+}
+
 static MPI_Datatype MPI_INDIVIDUAL;
 
 enum EvalKinds TargetEval = EVAL_BLUE;
@@ -530,7 +567,7 @@ static void BuildTypeTest()
 
 //突然変異
 static Individual Mutation(){  
-  Individual p;
+  Individual p;  
   for(int i=0; i<eKIND_NUM; i++)
   {
     if( i == eBRANCH_NM )
@@ -613,6 +650,10 @@ static Individual Select(){
     sum += (int)round(curGeneration[i].evals[TargetEval]); //四捨五入しておく
     rulet[i] = sum;
   }
+
+  //かりに全部0だった場合を考えておく
+  if( sum <= 0)
+    return curGeneration[NUM_GENOTYPE-1];
   
   int p = rand()%sum;
   for(int i=0; i<NUM_GENOTYPE; i++){
@@ -621,6 +662,16 @@ static Individual Select(){
   }
   
   return curGeneration[NUM_GENOTYPE-1]; //ここにはこないはず
+}
+
+//pがnexGeneration[0~n-1]に同じものがあるかチェック
+static bool alreadyExistInNexGeneration(int n, Individual *p)
+{
+  for(int i = 0; i<n; i++)
+    if( Equal(&nexGeneration[i], p) )
+      return true;
+  
+  return false;
 }
 
 // 世代交代
@@ -636,7 +687,13 @@ static void Heterogenesis()
     int p = rand()%(selectP + crossP + mutationP);
     if( p < selectP)
     {
-      nexGeneration[i++] = Select();
+      Individual p = Select();
+      if( alreadyExistInNexGeneration(i, &p) )
+        continue;
+
+      ExistInStorageAndSetEval(&p); //倉庫の中に同じものがあったら評価を受け取る
+
+      nexGeneration[i++] = p;
     }
     else if(p < selectP + crossP)
     {
@@ -646,11 +703,29 @@ static void Heterogenesis()
       Individual p1 = curGeneration[a];
       Individual p2 = curGeneration[b];
       CrossOver(&p1, &p2);
+      
+      if( Equal(&p1, &p2) || alreadyExistInNexGeneration(i, &p1) || alreadyExistInNexGeneration(i, &p2) )
+        continue;
+
+      //倉庫の中に同じものがあったら評価を受け取る
+      ExistInStorageAndSetEval(&p1);
+      ExistInStorageAndSetEval(&p2);
+      
       nexGeneration[i++] = p1;
+
+      if(i==NUM_GENOTYPE)
+        continue;
+      
       nexGeneration[i++] = p2;
     }
-    else{
-      nexGeneration[i++] = Mutation();
+    else{     
+      Individual p = Mutation();
+      if(alreadyExistInNexGeneration(i, &p))
+        continue;
+
+      //倉庫の中に同じものがあったら評価を受け取る
+      ExistInStorageAndSetEval(&p);
+      nexGeneration[i++] = p;
     }
   }
 
@@ -666,7 +741,7 @@ static void Heterogenesis()
 #include <time.h>
 #include "drawer.h"
 
-static void GAInitialize(){  
+static void GAInitialize(){
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   
   Ranges[eTHICK_NM_0].Min   = 10;
@@ -695,6 +770,7 @@ static void GAInitialize(){
     MPI_Comm_size(MPI_COMM_WORLD, &numProc);
     curGeneration = (Individual*)malloc(sizeof(Individual)*NUM_GENOTYPE);
     nexGeneration = (Individual*)malloc(sizeof(Individual)*NUM_GENOTYPE);
+    InitializeStorage();
   }
 
   BuildDerivedType(); //構造体を送受信するための方を定義
@@ -702,7 +778,7 @@ static void GAInitialize(){
   srand( (unsigned)time( NULL ) );
   
   //初期の設定を入れる
-  if(rank == 0){    
+  if(rank == 0){
     for(int i=0; i<NUM_GENOTYPE; i++)
       curGeneration[i] = Mutation();
     indivNoCur = 0;
@@ -713,6 +789,14 @@ static void GAInitialize(){
 #include "simulator.h"
 static void save( int imgNo, Individual *p, double r[360], double g[360], double b[360])
 {
+  double limit = 20; //画像は評価値がlimit以上がないと保存しない(無駄なので)
+  bool canSave = false;
+  for(int i=0; i<EVAL_NUM; i++)
+    canSave |= p->evals[i] > limit;
+
+  if( !canSave )
+    return;
+  
   //領域の設定を保存
   char buf[256];
   sprintf(buf, "%s/%d.txt", root, imgNo);  
@@ -728,39 +812,31 @@ static void save( int imgNo, Individual *p, double r[360], double g[360], double
   fprintf(fp, "branch_nm = %d\n", p->cells[eBRANCH_NM]);
   fclose(fp);
   
-  double limit = 0; //画像は評価値がlimit以上がないと保存しない(無駄なので)
-  bool canSave = false;
-  for(int i=0; i<EVAL_NUM; i++)
-    canSave |= p->evals[i] > limit;
-
   //評価値がlimit以上なら色の画像も保存
-  if( canSave ){
-    //static変数なのでfreeしない.
-    static colorf **img = NULL;
+  //static変数なのでfreeしない.
+  static colorf **img = NULL;
     
-    if( img == NULL ){
-      img = (colorf**)malloc(sizeof(colorf*)*180);
-      for(int i=0; i<180; i++)
-        img[i] = (colorf*)malloc(sizeof(colorf)*64);
-    }
-  
-    for(int i=0; i<180; i++){
-      for(int j=0; j<64; j++){
-        img[i][j].r = r[i];
-        img[i][j].g = g[i];
-        img[i][j].b = b[i];
-      }
-    }
-    
-    //画像を保存
-    //評価値はファイル名には記述しない.
-    //.txtに書いているので, 評価値を使いたいときは読み込むプログラムを書けば良い
-    char buf[512];
-
-    //色の画像を保存
-    sprintf(buf, "%s/%d.bmp", root, imgNo );
-    drawer_saveImage(buf, img, 180, 64);
+  if( img == NULL ){
+    img = (colorf**)malloc(sizeof(colorf*)*180);
+    for(int i=0; i<180; i++)
+      img[i] = (colorf*)malloc(sizeof(colorf)*64);
   }
+  
+  for(int i=0; i<180; i++){
+    for(int j=0; j<64; j++){
+      img[i][j].r = r[i];
+      img[i][j].g = g[i];
+      img[i][j].b = b[i];
+    }
+  }
+    
+  //画像を保存
+  //評価値はファイル名には記述しない.
+  //.txtに書いているので, 評価値を使いたいときは読み込むプログラムを書けば良い
+
+  //色の画像を保存
+  sprintf(buf, "%s/%d.bmp", root, imgNo );
+  drawer_saveImage(buf, img, 180, 64);
 
   /*
   //領域の画像を保存
@@ -830,9 +906,8 @@ void multiLayerModel_evaluate(double **reflec, int stLambda, int enLambda)
 
   calcEvaluateAndSaveImage(reflec, stLambda, enLambda); //評価を計算
 
-//  printf("Evaluate Start\n");
-//  printIndiv(&curGeneration[indivNoCur]);
-//  printf("Evaluate End\n");
+  //倉庫に追加
+  AddStorage(curGeneration[indivNoCur]);
 
   indivNoCur++;
 //　選択操作により,既に評価がわかっている場合もあるので,評価値が0以上なら飛ばす.
@@ -844,7 +919,7 @@ void multiLayerModel_evaluate(double **reflec, int stLambda, int enLambda)
       break;    
     indivNoCur++;
   }
-
+  
   //すべての個体の評価を求めると次世代を計算する.
   if( indivNoCur >= NUM_GENOTYPE ){
     Heterogenesis();
@@ -894,7 +969,7 @@ static bool SyncModelSetting()
     //他のプロセスに送る
     for(int i=1; i<numProc; i++) {
       MPI_Send(&curGeneration[indivNoCur], 1, MPI_INDIVIDUAL, i, tIndiv, MPI_COMM_WORLD);
-    }    
+    }
   }
   else{
     MPI_Status status;
@@ -902,6 +977,5 @@ static bool SyncModelSetting()
     MPI_Recv(&next, 1, MPI_INDIVIDUAL, 0, tIndiv, MPI_COMM_WORLD, &status);  //個体を受け取る.
     IndividualToSetting(&next); //設定に反映    
   }
-
   return false;
 }

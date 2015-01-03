@@ -134,8 +134,11 @@ void field_init(FieldInfo field_info)
   ntff_info.left   = N_PML + 5;
   ntff_info.right  = N_PX - N_PML - 5;
 
-  double len = (ntff_info.top - ntff_info.bottom)/2;
-  ntff_info.RFperC = len*2;
+  //横の方が長くなる場合もあるので,大きい方に合わせる必要がある.
+  //対角線にしてもいいけど計算面倒なので略
+  double len = max( ntff_info.top - ntff_info.bottom,
+                    ntff_info.right - ntff_info.left) / 2;
+  ntff_info.RFperC = (len)*2 ;
   ntff_info.arraySize = maxTime + 2*ntff_info.RFperC;
 }
 
