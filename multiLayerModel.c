@@ -456,7 +456,7 @@ void IndividualToSetting(Individual *p)
 }
 
 
-#define NUM_GENOTYPE 2  //世代の個体数
+#define NUM_GENOTYPE 25  //世代の個体数
 static Individual *curGeneration = NULL; //現世代
 static Individual *nexGeneration = NULL; //次世代
 static int indivNoCur = 0; //現世代で実行済みの個体数
