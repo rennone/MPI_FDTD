@@ -500,7 +500,7 @@ void AddStorage(Individual p){
 
 static MPI_Datatype MPI_INDIVIDUAL;
 
-enum EvalKinds TargetEval = EVAL_BLUE;
+enum EvalKinds TargetEval = EVAL_RED;
 
 //MPI_Typeの生成
 static void BuildDerivedType()
